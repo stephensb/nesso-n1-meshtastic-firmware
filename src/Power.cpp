@@ -1487,7 +1487,89 @@ bool Power::cw2015Init()
 }
 #endif
 
-#if defined(HAS_PPM) && HAS_PPM
+#if defined(ARDUINO_NESSO_N1) && defined(HAS_BQ27220)
+
+/**
+ * Power management for Arduino Nesso N1.
+ * Uses BQ27220 fuel gauge for battery data and AW32001E charger
+ * register 0x0B (VBUS_GD bit) for USB/external power detection.
+ */
+class NessoN1BatteryLevel : public HasBatteryLevel
+{
+    BQ27220 *bq = nullptr;
+
+    uint8_t aw32001e_read(uint8_t reg)
+    {
+        Wire.beginTransmission(0x49);
+        Wire.write(reg);
+        Wire.endTransmission();
+        Wire.requestFrom((uint8_t)0x49, (uint8_t)1);
+        return Wire.available() ? Wire.read() : 0;
+    }
+
+  public:
+    bool runOnce()
+    {
+        if (bq != nullptr)
+            return true;
+        bq = new BQ27220;
+        bq->setDefaultCapacity(BQ27220_DESIGN_CAPACITY);
+        if (!bq->init()) {
+            LOG_WARN("NessoN1: BQ27220 init failed");
+            delete bq;
+            bq = nullptr;
+            return false;
+        }
+        LOG_INFO("NessoN1: BQ27220 ready, design capacity %d mAh, voltage %d mV",
+                 bq->getDesignCapacity(), bq->getVoltage());
+        return true;
+    }
+
+    virtual int getBatteryPercent() override
+    {
+        if (!bq) return -1;
+        return (int)bq->getStateOfCharge();
+    }
+
+    virtual uint16_t getBattVoltage() override
+    {
+        if (!bq) return 0;
+        return bq->getVoltage();
+    }
+
+    virtual bool isBatteryConnect() override
+    {
+        if (!bq) return false;
+        BQ27220BatteryStatus status;
+        if (!bq->getBatteryStatus(&status)) return false;
+        return status.reg.BATTPRES;
+    }
+
+    // AW32001E register 0x0B System Status: bit 7 = VBUS_GD (VBUS Good)
+    virtual bool isVbusIn() override { return (aw32001e_read(0x0B) & 0x80) != 0; }
+
+    virtual bool isCharging() override
+    {
+        if (!bq) return false;
+        BQ27220BatteryStatus status;
+        if (!bq->getBatteryStatus(&status)) return false;
+        return status.reg.CHGING;
+    }
+};
+
+NessoN1BatteryLevel nessoN1Level;
+
+bool Power::lipoChargerInit()
+{
+    bool result = nessoN1Level.runOnce();
+    LOG_DEBUG("Power::lipoChargerInit NessoN1 is %s", result ? "ready" : "not ready");
+    if (!result)
+        return false;
+    batteryLevel = &nessoN1Level;
+    return true;
+}
+
+#elif defined(HAS_PPM) && HAS_PPM
 
 /**
  * Adapter class for BQ25896/BQ27220 Lipo battery charger.
