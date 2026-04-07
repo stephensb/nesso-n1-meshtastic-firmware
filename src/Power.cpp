@@ -1489,23 +1489,16 @@ bool Power::cw2015Init()
 
 #if defined(ARDUINO_NESSO_N1) && defined(HAS_BQ27220)
 
+extern uint8_t gpio_ext_read_input(uint8_t address, uint8_t pin);
+
 /**
  * Power management for Arduino Nesso N1.
- * Uses BQ27220 fuel gauge for battery data and AW32001E charger
- * register 0x0B (VBUS_GD bit) for USB/external power detection.
+ * Uses BQ27220 fuel gauge for battery data and the VIN_DETECT signal
+ * on the PI4IO GPIO expander (0x44 pin 5) for USB/external power detection.
  */
 class NessoN1BatteryLevel : public HasBatteryLevel
 {
     BQ27220 *bq = nullptr;
-
-    uint8_t aw32001e_read(uint8_t reg)
-    {
-        Wire.beginTransmission(0x49);
-        Wire.write(reg);
-        Wire.endTransmission();
-        Wire.requestFrom((uint8_t)0x49, (uint8_t)1);
-        return Wire.available() ? Wire.read() : 0;
-    }
 
   public:
     bool runOnce()
@@ -1545,8 +1538,9 @@ class NessoN1BatteryLevel : public HasBatteryLevel
         return status.reg.BATTPRES;
     }
 
-    // AW32001E register 0x0B System Status: bit 7 = VBUS_GD (VBUS Good)
-    virtual bool isVbusIn() override { return (aw32001e_read(0x0B) & 0x80) != 0; }
+    // VIN_DETECT: PI4IO second expander (0x44) pin 5 (P105)
+    // pull-down configured: HIGH = USB/VIN present, LOW = not connected
+    virtual bool isVbusIn() override { return gpio_ext_read_input(0x44, 5) != 0; }
 
     virtual bool isCharging() override
     {

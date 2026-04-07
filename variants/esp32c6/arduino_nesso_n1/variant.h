@@ -1,6 +1,7 @@
 void c6l_init();
 void gpio_ext_set(uint8_t address, uint8_t pin, bool value);
 uint8_t gpio_ext_get(uint8_t address, uint8_t pin);
+uint8_t gpio_ext_read_input(uint8_t address, uint8_t pin);
 
 #define SERIAL_PRINT_PORT 1
 

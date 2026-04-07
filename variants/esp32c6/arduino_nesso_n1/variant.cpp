@@ -125,3 +125,11 @@ uint8_t gpio_ext_get(uint8_t address, uint8_t pin)
     i2c_read_byte(address, PI4IO_REG_OUT_SET, &in_data);
     return getbit(in_data, pin);
 }
+
+// Read the actual logic level of a pin via the input status register (for input pins)
+uint8_t gpio_ext_read_input(uint8_t address, uint8_t pin)
+{
+    uint8_t in_data;
+    i2c_read_byte(address, PI4IO_REG_IN_STA, &in_data);
+    return getbit(in_data, pin);
+}
