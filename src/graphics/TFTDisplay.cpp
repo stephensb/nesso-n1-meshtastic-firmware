@@ -1502,6 +1502,12 @@ bool TFTDisplay::connect()
     attachInterrupt(digitalPinToInterrupt(SCREEN_TOUCH_INT), rak14014_tpIntHandle, FALLING);
 #elif defined(T_DECK) || defined(PICOMPUTER_S3) || defined(CHATTER_2) || defined(HELTEC_MESH_NODE_T096)
     tft->setRotation(1); // T-Deck has the TFT in landscape
+#elif defined(ARDUINO_NESSO_N1)
+#ifdef NESSO_PORTRAIT
+    tft->setRotation(0);
+#else
+    tft->setRotation(1); // landscape by default
+#endif
 #elif defined(T_WATCH_S3)
     tft->setRotation(2); // T-Watch S3 left-handed orientation
 #elif ARCH_PORTDUINO || defined(SENSECAP_INDICATOR) || defined(T_LORA_PAGER)
