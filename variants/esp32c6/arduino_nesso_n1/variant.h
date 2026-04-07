@@ -4,6 +4,8 @@ uint8_t gpio_ext_get(uint8_t address, uint8_t pin);
 
 #define SERIAL_PRINT_PORT 1
 
+#define USE_TFTDISPLAY 1
+
 #define HAS_GPS 0
 #define GPS_RX_PIN -1
 #define GPS_TX_PIN -1
