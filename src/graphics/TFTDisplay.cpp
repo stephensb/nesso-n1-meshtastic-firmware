@@ -629,7 +629,14 @@ class LGFX : public lgfx::LGFX_Device
             // cfg.freq = 400000;
 
             _touch_instance.config(cfg);
+#ifndef ARDUINO_NESSO_N1
+            // Nesso N1: FT5x06 shares I2C with critical sensors (BQ27220, PI4IO).
+            // If setTouch() is called, LovyanGFX init reads 0x38 — FT5x06 may be in
+            // sleep mode and won't respond, leaving the I2C bus stuck. All subsequent
+            // reads (BQ27220, PI4IO) then return 0xFF, causing 255% battery, 65535 mV,
+            // and false USB-connected reports. Skip touch init to keep the bus clean.
             _panel_instance.setTouch(&_touch_instance);
+#endif
         }
 #endif
 

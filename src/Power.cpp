@@ -1521,25 +1521,44 @@ class NessoN1BatteryLevel : public HasBatteryLevel
     virtual int getBatteryPercent() override
     {
         if (!bq) return -1;
-        return (int)bq->getStateOfCharge();
+        uint8_t soc = bq->getStateOfCharge();
+        // BQ27220 returns 0xFF when I2C read fails or gauge is uncalibrated.
+        // Clamp to valid range; log once if invalid to aid debugging.
+        if (soc > 100) {
+            LOG_WARN("NessoN1: BQ27220 SoC read invalid (0x%02X), I2C bus error?", soc);
+            return -1;
+        }
+        return (int)soc;
     }
 
     virtual uint16_t getBattVoltage() override
     {
         if (!bq) return 0;
-        return bq->getVoltage();
+        uint16_t mv = bq->getVoltage();
+        // 0xFFFF / 65535 mV indicates a failed I2C read; return 0 so callers
+        // know the value is unavailable rather than showing 65.53V on screen.
+        if (mv == 0xFFFF || mv > 5000) {
+            LOG_WARN("NessoN1: BQ27220 voltage read invalid (%d mV), I2C bus error?", mv);
+            return 0;
+        }
+        return mv;
     }
 
     virtual bool isBatteryConnect() override
     {
         if (!bq) return false;
         BQ27220BatteryStatus status;
-        if (!bq->getBatteryStatus(&status)) return false;
+        if (!bq->getBatteryStatus(&status)) {
+            LOG_WARN("NessoN1: BQ27220 getBatteryStatus failed");
+            return false;
+        }
         return status.reg.BATTPRES;
     }
 
     // VIN_DETECT: PI4IO second expander (0x44) pin 5 (P105)
-    // pull-down configured: HIGH = USB/VIN present, LOW = not connected
+    // Pull-down configured: HIGH = USB/VIN present, LOW = not connected.
+    // If the I2C bus is stuck and returns 0xFF, bit 5 = 1 (false USB-connected).
+    // After the FT5x06 touch init was removed this should no longer be an issue.
     virtual bool isVbusIn() override { return gpio_ext_read_input(0x44, 5) != 0; }
 
     virtual bool isCharging() override

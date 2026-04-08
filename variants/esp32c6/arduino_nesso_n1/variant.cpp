@@ -23,13 +23,23 @@
 #define reversebit(x, y) x ^= (0x01 << y)
 #define getbit(x, y) ((x) >> (y)&0x01)
 
-void i2c_read_byte(uint8_t addr, uint8_t reg, uint8_t *value)
+// Returns true on success. On failure *value is left unchanged.
+// Using endTransmission() error code and requestFrom() byte count to detect
+// NACK or timeout, preventing callers from acting on stale/garbage data.
+bool i2c_read_byte(uint8_t addr, uint8_t reg, uint8_t *value)
 {
     Wire.beginTransmission(addr);
     Wire.write(reg);
-    Wire.endTransmission();
-    Wire.requestFrom(addr, 1);
+    uint8_t err = Wire.endTransmission();
+    if (err != 0) {
+        return false;
+    }
+    uint8_t count = Wire.requestFrom(addr, (uint8_t)1);
+    if (count == 0 || !Wire.available()) {
+        return false;
+    }
     *value = Wire.read();
+    return true;
 }
 
 /*******************************************************************/
@@ -56,7 +66,7 @@ void c6l_init()
     // P100 POWEROFF
 
     printf("pi4io_init\n");
-    uint8_t in_data;
+    uint8_t in_data = 0;
     i2c_write_byte(PI4IO_M_ADDR, PI4IO_REG_CHIP_RESET, 0xFF);
     vTaskDelay(10 / portTICK_PERIOD_MS);
     i2c_read_byte(PI4IO_M_ADDR, PI4IO_REG_CHIP_RESET, &in_data);
@@ -75,11 +85,13 @@ void c6l_init()
     vTaskDelay(10 / portTICK_PERIOD_MS);
     i2c_write_byte(PI4IO_M_ADDR, PI4IO_REG_OUT_SET, 0b11100000); // default output to 0
     vTaskDelay(10 / portTICK_PERIOD_MS);
-    i2c_read_byte(PI4IO_M_ADDR, PI4IO_REG_IRQ_STA, &in_data); // Read IRQ_STA clear register
+    i2c_read_byte(PI4IO_M_ADDR, PI4IO_REG_IRQ_STA, &in_data); // Read IRQ_STA to clear
 
-    i2c_read_byte(PI4IO_M_ADDR, PI4IO_REG_OUT_SET, &in_data);
-    setbit(in_data, 6); // HIGH
-    i2c_write_byte(PI4IO_M_ADDR, PI4IO_REG_OUT_SET, in_data);
+    in_data = 0;
+    if (i2c_read_byte(PI4IO_M_ADDR, PI4IO_REG_OUT_SET, &in_data)) {
+        setbit(in_data, 6); // Enable LCD backlight pin HIGH
+        i2c_write_byte(PI4IO_M_ADDR, PI4IO_REG_OUT_SET, in_data);
+    }
 
     i2c_write_byte(PI4IO_M_ADDR2, PI4IO_REG_CHIP_RESET, 0xFF);
     vTaskDelay(10 / portTICK_PERIOD_MS);
@@ -93,43 +105,49 @@ void c6l_init()
     vTaskDelay(10 / portTICK_PERIOD_MS);
     i2c_write_byte(PI4IO_M_ADDR2, PI4IO_REG_PULL_EN, 0b11000111); // pull up/down enable, 0 disable, 1 enable
     vTaskDelay(10 / portTICK_PERIOD_MS);
-    i2c_write_byte(PI4IO_M_ADDR2, PI4IO_REG_IN_DEF_STA, 0b00000000); // P0 P1 Default state HIGH, interrupt when pressed
+    i2c_write_byte(PI4IO_M_ADDR2, PI4IO_REG_IN_DEF_STA, 0b00000000); // no default-state interrupts
     vTaskDelay(10 / portTICK_PERIOD_MS);
-    i2c_write_byte(PI4IO_M_ADDR2, PI4IO_REG_INT_MASK, 0b11111111); // P0 P1 Interrupt 0 enable, 1 disable
+    i2c_write_byte(PI4IO_M_ADDR2, PI4IO_REG_INT_MASK, 0b11111111); // all interrupts masked
     vTaskDelay(10 / portTICK_PERIOD_MS);
-    i2c_write_byte(PI4IO_M_ADDR2, PI4IO_REG_OUT_SET, 0b11000110); // default output to 0
+    i2c_write_byte(PI4IO_M_ADDR2, PI4IO_REG_OUT_SET, 0b11000110); // default output state
 
-    // AW32001E - address 0x49
+    // AW32001E charger - address 0x49
     // charge current 256mA (default 128mA)
     i2c_write_byte(0x49, 0x2, 0x1f);
-    // charge voltage 4.200(default)
-    // disable watch dog timer (default: 0x1f)
+    // charge voltage 4.200 V (default), disable watchdog timer
     i2c_write_byte(0x49, 0x5, 0x1a);
-    // UVLO: 2.580 (default: 2.760), charge enable, disable HIZ (default: 0xac)
+    // UVLO: 2.580 V, charge enable, disable HIZ (default 0xac)
     i2c_write_byte(0x49, 0x1, 0xa2);
-    // DPM 4.520 (default)
+    // DPM 4.520 V (default)
     i2c_write_byte(0x49, 0x0, 0x8f);
 }
 
+// Set output pin on PI4IO expander. Reads current output register, modifies
+// the target bit, and writes back. Safe to call only for output-configured pins.
 void gpio_ext_set(uint8_t address, uint8_t pin, bool value)
 {
-    uint8_t in_data;
-    i2c_read_byte(address, PI4IO_REG_OUT_SET, &in_data);
+    uint8_t in_data = 0;
+    if (!i2c_read_byte(address, PI4IO_REG_OUT_SET, &in_data)) {
+        return; // I2C failure; don't write garbage back
+    }
     value ? setbit(in_data, pin) : clrbit(in_data, pin);
     i2c_write_byte(address, PI4IO_REG_OUT_SET, in_data);
 }
 
+// Read back what was last written to an output pin (output register, NOT input status).
+// Use gpio_ext_read_input() for input pins.
 uint8_t gpio_ext_get(uint8_t address, uint8_t pin)
 {
-    uint8_t in_data;
+    uint8_t in_data = 0;
     i2c_read_byte(address, PI4IO_REG_OUT_SET, &in_data);
     return getbit(in_data, pin);
 }
 
-// Read the actual logic level of a pin via the input status register (for input pins)
+// Read the actual logic level of a pin via the input status register.
+// Safe for input pins. Returns 0 on I2C failure (safe default = not asserted).
 uint8_t gpio_ext_read_input(uint8_t address, uint8_t pin)
 {
-    uint8_t in_data;
+    uint8_t in_data = 0;
     i2c_read_byte(address, PI4IO_REG_IN_STA, &in_data);
     return getbit(in_data, pin);
 }

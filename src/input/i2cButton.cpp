@@ -21,7 +21,7 @@ i2cButtonThread *i2cButton;
 
 using namespace concurrency;
 
-extern void i2c_read_byte(uint8_t addr, uint8_t reg, uint8_t *value);
+extern bool i2c_read_byte(uint8_t addr, uint8_t reg, uint8_t *value);
 
 extern void i2c_write_byte(uint8_t addr, uint8_t reg, uint8_t value);
 
@@ -45,11 +45,14 @@ int32_t i2cButtonThread::runOnce()
     const uint32_t LONG_PRESS_TIME = 1000;
     static bool long_press_triggered = false;
 
-    uint8_t in_data;
-    i2c_read_byte(PI4IO_M_ADDR, PI4IO_REG_IRQ_STA, &in_data);
+    uint8_t in_data = 0;
+    if (!i2c_read_byte(PI4IO_M_ADDR, PI4IO_REG_IRQ_STA, &in_data)) {
+        // PI4IO read failed (I2C bus error). Skip this poll cycle.
+        return 50;
+    }
     i2c_write_byte(PI4IO_M_ADDR, PI4IO_REG_IRQ_STA, in_data);
     if (getbit(in_data, 0)) {
-        uint8_t input_state;
+        uint8_t input_state = 0xFF; // safe default: button not pressed
         i2c_read_byte(PI4IO_M_ADDR, PI4IO_REG_IN_STA, &input_state);
 
         if (!getbit(input_state, 0)) {
