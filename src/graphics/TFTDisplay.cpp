@@ -540,6 +540,17 @@ class LGFX : public lgfx::LGFX_Device
             cfg.offset_x = 0;
             cfg.offset_y = 0;                             // No vertical shift needed — panel is top-aligned
             cfg.offset_rotation = 2;                      // Rotate 180° to correct upside-down layout
+#elif defined(ARDUINO_NESSO_N1)
+            // Physical panel is 135x240 in native (portrait) orientation.
+            // setRotation(1) in connect() makes it landscape 240x135.
+            // These native values must NOT be swapped to landscape dimensions.
+            cfg.panel_width = 135;
+            cfg.panel_height = 240;
+            cfg.memory_width = 240;   // Full ST7789 IC RAM width
+            cfg.memory_height = 320;  // Full ST7789 IC RAM height
+            cfg.offset_x = 52;        // (240-135)/2 = 52
+            cfg.offset_y = 40;        // (320-240)/2 = 40
+            cfg.offset_rotation = 0;  // Orientation handled by setRotation() in connect()
 #else
             cfg.memory_width = TFT_WIDTH;              // Maximum width supported by the driver IC
             cfg.memory_height = TFT_HEIGHT;            // Maximum height supported by the driver IC

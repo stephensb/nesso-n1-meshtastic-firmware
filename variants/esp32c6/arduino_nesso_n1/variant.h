@@ -74,17 +74,15 @@ uint8_t gpio_ext_read_input(uint8_t address, uint8_t pin);
 #define ST7789_SPI_HOST SPI2_HOST
 #define SPI_FREQUENCY 40000000
 #define SPI_READ_FREQUENCY 16000000
-// Landscape by default; build with -D NESSO_PORTRAIT for portrait orientation
+// Logical display dimensions (used for UI layout).
+// Panel config native values are hardcoded in TFTDisplay.cpp for ARDUINO_NESSO_N1.
+// Build with -D NESSO_PORTRAIT for portrait orientation.
 #ifdef NESSO_PORTRAIT
 #define TFT_WIDTH 135
 #define TFT_HEIGHT 240
-#define TFT_OFFSET_X 52
-#define TFT_OFFSET_Y 40
 #else
 #define TFT_WIDTH 240
 #define TFT_HEIGHT 135
-#define TFT_OFFSET_X 40
-#define TFT_OFFSET_Y 53
 #endif
 #define TFT_OFFSET_ROTATION 0
 #define SCREEN_TRANSITION_FRAMERATE 10
