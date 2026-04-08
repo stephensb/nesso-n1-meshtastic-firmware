@@ -593,7 +593,11 @@ class LGFX : public lgfx::LGFX_Device
             cfg.x_max = TFT_HEIGHT - 1;
             cfg.y_min = 0;
             cfg.y_max = TFT_WIDTH - 1;
+#ifdef ARDUINO_NESSO_N1
+            cfg.pin_int = -1; // SYS_IRQ (pin 3) shared with PI4IO; don't use as touch INT
+#else
             cfg.pin_int = SCREEN_TOUCH_INT;
+#endif
 #ifdef SCREEN_TOUCH_RST
             cfg.pin_rst = SCREEN_TOUCH_RST;
 #endif
