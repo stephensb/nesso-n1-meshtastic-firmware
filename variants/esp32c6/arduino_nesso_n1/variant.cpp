@@ -1,11 +1,8 @@
+#include "variant.h"
 #include "driver/gpio.h"
 #include <Arduino.h>
 #include <Wire.h>
 #include <inttypes.h>
-
-// I2C pins (match I2C_SDA / I2C_SCL in variant.h)
-#define NESSO_I2C_SDA 10
-#define NESSO_I2C_SCL 8
 
 // I2C device addresses
 #define PI4IO_M_ADDR  0x43
@@ -39,13 +36,19 @@
 //
 // Every step is logged to Serial so you can paste the output and report back
 // which config (if any) recovered the bus.
+//
+// Rate-limited: won't attempt recovery more than once per
+// NESSO_I2C_RECOVERY_COOLDOWN_MS to avoid flooding the log in a persistent
+// failure scenario.
 // ---------------------------------------------------------------------------
 
-#define NESSO_I2C_FAIL_THRESHOLD 3   // consecutive failures before recovery
-#define NESSO_I2C_PROBE_ADDR     PI4IO_M_ADDR  // known always-present device
+#define NESSO_I2C_FAIL_THRESHOLD       3       // consecutive failures before recovery
+#define NESSO_I2C_PROBE_ADDR           PI4IO_M_ADDR  // known always-present device
+#define NESSO_I2C_RECOVERY_COOLDOWN_MS 10000   // 10 s between recovery attempts
 
-static uint32_t s_i2c_fail_count = 0;      // consecutive failure counter
-static uint32_t s_i2c_recovery_count = 0;  // total recovery attempts
+static uint32_t s_i2c_fail_count = 0;          // consecutive failure counter
+static uint32_t s_i2c_recovery_count = 0;      // total recovery attempts
+static uint32_t s_i2c_last_recovery_ms = 0;    // millis() of last attempt
 
 // Probe a single address; return true if device ACKs.
 static bool i2c_probe(uint8_t addr)
@@ -59,7 +62,7 @@ static bool i2c_try_freq(uint32_t freq, const char *label)
 {
     Wire.end();
     delay(5);
-    Wire.begin(NESSO_I2C_SDA, NESSO_I2C_SCL, freq);
+    Wire.begin(I2C_SDA, I2C_SCL, freq);
     delay(2);
     bool ok = i2c_probe(NESSO_I2C_PROBE_ADDR);
     printf("[I2C-RECOVERY] freq=%s (%" PRIu32 " Hz) -> %s\n",
@@ -72,41 +75,40 @@ static bool i2c_try_freq(uint32_t freq, const char *label)
 static bool i2c_manual_clock_recovery(uint32_t recover_freq)
 {
     printf("[I2C-RECOVERY] Manual 9-pulse SCL clock on SDA=%d SCL=%d...\n",
-           NESSO_I2C_SDA, NESSO_I2C_SCL);
+           I2C_SDA, I2C_SCL);
     Wire.end();
     delay(5);
 
     // Briefly take GPIO control of both pins
-    pinMode(NESSO_I2C_SCL, OUTPUT);
-    pinMode(NESSO_I2C_SDA, INPUT_PULLUP);
-    digitalWrite(NESSO_I2C_SCL, HIGH);
+    pinMode(I2C_SCL, OUTPUT);
+    pinMode(I2C_SDA, INPUT_PULLUP);
+    digitalWrite(I2C_SCL, HIGH);
     delayMicroseconds(10);
 
     for (int pulse = 0; pulse < 9; pulse++) {
-        bool sda_high = digitalRead(NESSO_I2C_SDA);
+        bool sda_high = digitalRead(I2C_SDA);
         printf("[I2C-RECOVERY]   pulse %d  SDA=%d\n", pulse + 1, sda_high ? 1 : 0);
         if (sda_high && pulse > 0) {
-            // SDA released — slave is no longer holding it
             printf("[I2C-RECOVERY]   SDA released after %d pulses\n", pulse + 1);
             break;
         }
-        digitalWrite(NESSO_I2C_SCL, LOW);
+        digitalWrite(I2C_SCL, LOW);
         delayMicroseconds(5);
-        digitalWrite(NESSO_I2C_SCL, HIGH);
+        digitalWrite(I2C_SCL, HIGH);
         delayMicroseconds(5);
     }
 
-    // Generate a STOP condition: SDA low → SCL high → SDA high
-    pinMode(NESSO_I2C_SDA, OUTPUT);
-    digitalWrite(NESSO_I2C_SDA, LOW);
+    // Generate a STOP condition: SDA low -> SCL high -> SDA high
+    pinMode(I2C_SDA, OUTPUT);
+    digitalWrite(I2C_SDA, LOW);
     delayMicroseconds(5);
-    digitalWrite(NESSO_I2C_SCL, HIGH);
+    digitalWrite(I2C_SCL, HIGH);
     delayMicroseconds(5);
-    digitalWrite(NESSO_I2C_SDA, HIGH);
+    digitalWrite(I2C_SDA, HIGH);
     delayMicroseconds(5);
 
     // Hand back to Wire
-    Wire.begin(NESSO_I2C_SDA, NESSO_I2C_SCL, recover_freq);
+    Wire.begin(I2C_SDA, I2C_SCL, recover_freq);
     delay(5);
     bool ok = i2c_probe(NESSO_I2C_PROBE_ADDR);
     printf("[I2C-RECOVERY] After manual clock at %" PRIu32 " Hz -> %s\n",
@@ -117,7 +119,15 @@ static bool i2c_manual_clock_recovery(uint32_t recover_freq)
 // Full recovery sequence.  Returns true if bus is usable again.
 static bool i2c_recover_bus()
 {
+    // Rate-limit: don't hammer recovery on every failed read
+    uint32_t now = millis();
+    if (s_i2c_recovery_count > 0 &&
+        (now - s_i2c_last_recovery_ms) < NESSO_I2C_RECOVERY_COOLDOWN_MS) {
+        return false;
+    }
+    s_i2c_last_recovery_ms = now;
     s_i2c_recovery_count++;
+
     printf("[I2C-RECOVERY] === Attempt #%" PRIu32 " after %" PRIu32
            " consecutive failures ===\n",
            s_i2c_recovery_count, s_i2c_fail_count);
@@ -149,7 +159,7 @@ static bool i2c_recover_bus()
 
     printf("[I2C-RECOVERY] !!! ALL RECOVERY ATTEMPTS FAILED !!!\n");
     printf("[I2C-RECOVERY] SDA=%d SCL=%d — check wiring/pullups\n",
-           NESSO_I2C_SDA, NESSO_I2C_SCL);
+           I2C_SDA, I2C_SCL);
     return false;
 }
 
@@ -167,7 +177,7 @@ bool i2c_read_byte(uint8_t addr, uint8_t reg, uint8_t *value)
     if (err != 0) {
         s_i2c_fail_count++;
         if (s_i2c_fail_count >= NESSO_I2C_FAIL_THRESHOLD) {
-            printf("[I2C] %d consecutive failures (last: addr=0x%02X reg=0x%02X err=%d)\n",
+            printf("[I2C] %" PRIu32 " consecutive failures (last: addr=0x%02X reg=0x%02X err=%d)\n",
                    s_i2c_fail_count, addr, reg, err);
             if (i2c_recover_bus()) {
                 s_i2c_fail_count = 0;
@@ -179,7 +189,7 @@ bool i2c_read_byte(uint8_t addr, uint8_t reg, uint8_t *value)
     if (count == 0 || !Wire.available()) {
         s_i2c_fail_count++;
         if (s_i2c_fail_count >= NESSO_I2C_FAIL_THRESHOLD) {
-            printf("[I2C] %d consecutive failures (last: addr=0x%02X reg=0x%02X no data)\n",
+            printf("[I2C] %" PRIu32 " consecutive failures (last: addr=0x%02X reg=0x%02X no data)\n",
                    s_i2c_fail_count, addr, reg);
             if (i2c_recover_bus()) {
                 s_i2c_fail_count = 0;
@@ -235,17 +245,18 @@ void c6l_init()
     vTaskDelay(10 / portTICK_PERIOD_MS);
     i2c_write_byte(PI4IO_M_ADDR, PI4IO_REG_PULL_EN,    0b11100011); // enable those pulls
     vTaskDelay(10 / portTICK_PERIOD_MS);
-    i2c_write_byte(PI4IO_M_ADDR, PI4IO_REG_IN_DEF_STA, 0b00000011); // P0,P1 default HIGH → IRQ on press
+    i2c_write_byte(PI4IO_M_ADDR, PI4IO_REG_IN_DEF_STA, 0b00000011); // P0,P1 default HIGH -> IRQ on press
     vTaskDelay(10 / portTICK_PERIOD_MS);
     i2c_write_byte(PI4IO_M_ADDR, PI4IO_REG_INT_MASK,   0b11111100); // P0,P1 interrupt enabled
     vTaskDelay(10 / portTICK_PERIOD_MS);
-    i2c_write_byte(PI4IO_M_ADDR, PI4IO_REG_OUT_SET,    0b11100000); // default outputs low
+    i2c_write_byte(PI4IO_M_ADDR, PI4IO_REG_OUT_SET,    0b11100000); // P7,P6,P5=HIGH (LoRa RST, RF SW, LNA)
     vTaskDelay(10 / portTICK_PERIOD_MS);
     i2c_read_byte(PI4IO_M_ADDR, PI4IO_REG_IRQ_STA, &in_data); // clear any pending IRQ
 
+    // OUT_SET already set above; re-read + ensure RF Switch (P6) is on
     in_data = 0;
     if (i2c_read_byte(PI4IO_M_ADDR, PI4IO_REG_OUT_SET, &in_data)) {
-        setbit(in_data, 6); // LCD_BACKLIGHT HIGH
+        setbit(in_data, 6); // P6 = RF Switch enable
         i2c_write_byte(PI4IO_M_ADDR, PI4IO_REG_OUT_SET, in_data);
     }
 
@@ -258,7 +269,7 @@ void c6l_init()
     vTaskDelay(10 / portTICK_PERIOD_MS);
     i2c_write_byte(PI4IO_M_ADDR2, PI4IO_REG_OUT_H_IM,   0b00111000); // P105,P104,P103=high-Z (inputs)
     vTaskDelay(10 / portTICK_PERIOD_MS);
-    i2c_write_byte(PI4IO_M_ADDR2, PI4IO_REG_PULL_SEL,   0b11000111); // outputs pull-up; P102,P101,P100 pull-up; P105=pull-down
+    i2c_write_byte(PI4IO_M_ADDR2, PI4IO_REG_PULL_SEL,   0b11000111); // P105=pull-down; rest pull-up
     vTaskDelay(10 / portTICK_PERIOD_MS);
     i2c_write_byte(PI4IO_M_ADDR2, PI4IO_REG_PULL_EN,    0b11000111); // enable those pulls
     vTaskDelay(10 / portTICK_PERIOD_MS);
@@ -266,7 +277,7 @@ void c6l_init()
     vTaskDelay(10 / portTICK_PERIOD_MS);
     i2c_write_byte(PI4IO_M_ADDR2, PI4IO_REG_INT_MASK,   0b11111111); // all interrupts masked
     vTaskDelay(10 / portTICK_PERIOD_MS);
-    i2c_write_byte(PI4IO_M_ADDR2, PI4IO_REG_OUT_SET,    0b11000110); // default output state
+    i2c_write_byte(PI4IO_M_ADDR2, PI4IO_REG_OUT_SET,    0b11000110); // P107,P106=HIGH; P102,P101=HIGH
 
     // --- AW32001E charger (0x49) ---
     i2c_write_byte(0x49, 0x2, 0x1f); // charge current 256 mA

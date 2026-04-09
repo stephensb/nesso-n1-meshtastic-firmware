@@ -1522,10 +1522,12 @@ class NessoN1BatteryLevel : public HasBatteryLevel
     {
         if (!bq) return -1;
         uint8_t soc = bq->getStateOfCharge();
-        // BQ27220 returns 0xFF when I2C read fails or gauge is uncalibrated.
-        // Clamp to valid range; log once if invalid to aid debugging.
         if (soc > 100) {
-            LOG_WARN("NessoN1: BQ27220 SoC read invalid (0x%02X), I2C bus error?", soc);
+            static uint32_t lastWarn = 0;
+            if (millis() - lastWarn > 30000) {
+                lastWarn = millis();
+                LOG_WARN("NessoN1: BQ27220 SoC read invalid (0x%02X), I2C bus error?", soc);
+            }
             return -1;
         }
         return (int)soc;
@@ -1535,10 +1537,12 @@ class NessoN1BatteryLevel : public HasBatteryLevel
     {
         if (!bq) return 0;
         uint16_t mv = bq->getVoltage();
-        // 0xFFFF / 65535 mV indicates a failed I2C read; return 0 so callers
-        // know the value is unavailable rather than showing 65.53V on screen.
         if (mv == 0xFFFF || mv > 5000) {
-            LOG_WARN("NessoN1: BQ27220 voltage read invalid (%d mV), I2C bus error?", mv);
+            static uint32_t lastWarn = 0;
+            if (millis() - lastWarn > 30000) {
+                lastWarn = millis();
+                LOG_WARN("NessoN1: BQ27220 voltage read invalid (%d mV), I2C bus error?", mv);
+            }
             return 0;
         }
         return mv;
@@ -1548,10 +1552,7 @@ class NessoN1BatteryLevel : public HasBatteryLevel
     {
         if (!bq) return false;
         BQ27220BatteryStatus status;
-        if (!bq->getBatteryStatus(&status)) {
-            LOG_WARN("NessoN1: BQ27220 getBatteryStatus failed");
-            return false;
-        }
+        if (!bq->getBatteryStatus(&status)) return false;
         return status.reg.BATTPRES;
     }
 

@@ -488,8 +488,8 @@ class LGFX : public lgfx::LGFX_Device
     lgfx::Panel_ST7789 _panel_instance;
     lgfx::Bus_SPI _bus_instance;
     lgfx::Light_PWM _light_instance;
-#if HAS_TOUCHSCREEN
-#if defined(T_WATCH_S3) || defined(ELECROW) || defined(ARDUINO_NESSO_N1)
+#if HAS_TOUCHSCREEN && !defined(ARDUINO_NESSO_N1)
+#if defined(T_WATCH_S3) || defined(ELECROW)
     lgfx::Touch_FT5x06 _touch_instance;
 #elif defined(HELTEC_V4_TFT)
     lgfx::TOUCH_CHSC6X _touch_instance;
@@ -594,7 +594,11 @@ class LGFX : public lgfx::LGFX_Device
         }
 #endif
 
-#if HAS_TOUCHSCREEN
+// Nesso N1: FT5x06 touch at 0x38 shares the I2C bus with BQ27220 and PI4IO.
+// LovyanGFX Touch_FT5x06::init() reads 0x38, but the FT5x06 may be in sleep
+// mode at boot and won't respond, leaving the I2C bus stuck. All subsequent
+// reads (BQ27220, PI4IO) then return 0xFF. Skip touch entirely for Nesso N1.
+#if HAS_TOUCHSCREEN && !defined(ARDUINO_NESSO_N1)
         // Configure settings for touch screen control.
         {
             auto cfg = _touch_instance.config();
@@ -604,11 +608,7 @@ class LGFX : public lgfx::LGFX_Device
             cfg.x_max = TFT_HEIGHT - 1;
             cfg.y_min = 0;
             cfg.y_max = TFT_WIDTH - 1;
-#ifdef ARDUINO_NESSO_N1
-            cfg.pin_int = -1; // SYS_IRQ (pin 3) shared with PI4IO; don't use as touch INT
-#else
             cfg.pin_int = SCREEN_TOUCH_INT;
-#endif
 #ifdef SCREEN_TOUCH_RST
             cfg.pin_rst = SCREEN_TOUCH_RST;
 #endif
@@ -629,14 +629,7 @@ class LGFX : public lgfx::LGFX_Device
             // cfg.freq = 400000;
 
             _touch_instance.config(cfg);
-#ifndef ARDUINO_NESSO_N1
-            // Nesso N1: FT5x06 shares I2C with critical sensors (BQ27220, PI4IO).
-            // If setTouch() is called, LovyanGFX init reads 0x38 — FT5x06 may be in
-            // sleep mode and won't respond, leaving the I2C bus stuck. All subsequent
-            // reads (BQ27220, PI4IO) then return 0xFF, causing 255% battery, 65535 mV,
-            // and false USB-connected reports. Skip touch init to keep the bus clean.
             _panel_instance.setTouch(&_touch_instance);
-#endif
         }
 #endif
 

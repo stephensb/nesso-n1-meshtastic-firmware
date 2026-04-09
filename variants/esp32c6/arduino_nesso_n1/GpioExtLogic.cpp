@@ -1,5 +1,4 @@
 #include "GpioExtLogic.h"
-#include <assert.h>
 
 void GpioExtPin::set(bool value)
 {
