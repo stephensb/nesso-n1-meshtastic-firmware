@@ -17,6 +17,9 @@
 #include "input/SerialKeyboardImpl.h"
 #include "input/UpDownInterruptImpl1.h"
 #include "input/i2cButton.h"
+#ifdef ARDUINO_NESSO_N1
+#include "NessoDiagModule.h"
+#endif
 #if HAS_TRACKBALL
 #include "input/TrackballInterruptImpl1.h"
 #endif
@@ -370,6 +373,9 @@ void InputBroker::Init()
         cardKbI2cImpl->init();
 #if defined(M5STACK_UNITC6L) || defined(ARDUINO_NESSO_N1)
         i2cButton = new i2cButtonThread("i2cButtonThread");
+#endif
+#ifdef ARDUINO_NESSO_N1
+        nessoDiag = new NessoDiagModule();
 #endif
 #ifdef INPUTBROKER_MATRIX_TYPE
         kbMatrixImpl = new KbMatrixImpl();
