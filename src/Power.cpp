@@ -1487,7 +1487,7 @@ bool Power::cw2015Init()
 }
 #endif
 
-#if defined(ARDUINO_NESSO_N1) && defined(HAS_BQ27220)
+#if defined(ARDUINO_NESSO_N1)
 
 extern uint8_t gpio_ext_read_input(uint8_t address, uint8_t pin);
 

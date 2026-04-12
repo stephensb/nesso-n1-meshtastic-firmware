@@ -20,10 +20,9 @@
 #define PI4IO_REG_INT_MASK   0x11
 #define PI4IO_REG_IRQ_STA    0x13
 
-#define setbit(x, y)     x |= (0x01 << y)
-#define clrbit(x, y)     x &= ~(0x01 << y)
-#define reversebit(x, y) x ^= (0x01 << y)
-#define getbit(x, y)     ((x) >> (y) & 0x01)
+#define setbit(x, y) x |= (0x01 << y)
+#define clrbit(x, y) x &= ~(0x01 << y)
+#define getbit(x, y) ((x) >> (y) & 0x01)
 
 // ---------------------------------------------------------------------------
 // I2C bus recovery

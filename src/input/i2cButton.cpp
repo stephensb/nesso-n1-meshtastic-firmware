@@ -42,8 +42,8 @@ int32_t i2cButtonThread::runOnce()
 {
     // KEY1 (PI4IO 0x43 P0) state
     static bool btn1_pressed = false;
-    static uint32_t press1_start_time = 0;
-    static bool long1_press_triggered = false;
+    static uint32_t press_start_time = 0;
+    static bool long_press_triggered = false;
 
     // KEY2 (PI4IO 0x43 P1) state
     static bool btn2_pressed = false;
@@ -71,16 +71,16 @@ int32_t i2cButtonThread::runOnce()
             // Button pressed (active low)
             if (!btn1_pressed) {
                 btn1_pressed = true;
-                press1_start_time = millis();
-                long1_press_triggered = false;
+                press_start_time = millis();
+                long_press_triggered = false;
             }
         } else {
             // Button released
             if (btn1_pressed) {
                 btn1_pressed = false;
-                uint32_t press_duration = millis() - press1_start_time;
-                if (long1_press_triggered) {
-                    long1_press_triggered = false;
+                uint32_t press_duration = millis() - press_start_time;
+                if (long_press_triggered) {
+                    long_press_triggered = false;
                 } else if (press_duration < LONG_PRESS_TIME) {
                     InputEvent evt;
                     evt.source = "UserButton";
@@ -95,8 +95,8 @@ int32_t i2cButtonThread::runOnce()
     }
 
     // KEY1 long-press detection (checked every poll cycle while held)
-    if (btn1_pressed && !long1_press_triggered && (millis() - press1_start_time >= LONG_PRESS_TIME)) {
-        long1_press_triggered = true;
+    if (btn1_pressed && !long_press_triggered && (millis() - press_start_time >= LONG_PRESS_TIME)) {
+        long_press_triggered = true;
         InputEvent evt;
         evt.source = "UserButton";
         evt.inputEvent = INPUT_BROKER_SELECT;

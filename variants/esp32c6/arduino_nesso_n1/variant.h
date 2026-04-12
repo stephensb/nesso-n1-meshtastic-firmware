@@ -27,7 +27,6 @@ uint8_t gpio_ext_read_input(uint8_t address, uint8_t pin);
 
 #define PIN_BUZZER 11
 
-#define IO_EXPANDER 0x40
 #define LCD_BACKLIGHT 0x106
 
 // #define BUTTON_PIN 9
@@ -90,14 +89,10 @@ uint8_t gpio_ext_read_input(uint8_t address, uint8_t pin);
 #define TFT_WIDTH 240
 #define TFT_HEIGHT 135
 #endif
-#define TFT_OFFSET_ROTATION 0
 #define SCREEN_TRANSITION_FRAMERATE 10
 #define BRIGHTNESS_DEFAULT 130
 // FT5x06 touch (I2C 0x38) is present in hardware but disabled in firmware:
 // its LovyanGFX init locks the I2C bus at boot, breaking BQ27220 and PI4IO.
 // Set HAS_TOUCHSCREEN 0 to prevent TouchScreenImpl1 polling thread from running.
 #define HAS_TOUCHSCREEN 0
-#define TOUCH_I2C_PORT 0
-#define TOUCH_SLAVE_ADDRESS 0x38
-#define SCREEN_TOUCH_INT 3
-#define TFT_BL_EXT (LCD_BACKLIGHT | IO_EXPANDER)
+#define TFT_BL_EXT LCD_BACKLIGHT
